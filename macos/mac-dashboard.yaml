@@ -1,0 +1,580 @@
+# Dashboard "MacBook" para los widgets de Observatory.
+# Lo carga el sidecar grafana-sc-dashboard, que vigila ConfigMaps con la etiqueta
+# grafana_dashboard=1 en cualquier namespace: no hace falta token de escritura ni
+# tocar el Helm release. Editarlo desde la UI de Grafana NO persiste; se edita aquí.
+#
+# Sin variables de plantilla a propósito: el instance va fijo a macbook-pro:9100
+# (lo fija el relabeling de mac-node-exporter.yaml), así los favoritos de
+# Observatory no dependen de valores que puedan quedarse caducados.
+# Unidades en formato Grafana (percent/Bps/bps/bytes/short) porque el widget ya
+# las escala: 1128140 Bps -> "1,1 MB/s".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-macbook
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  macbook.json: |
+    {
+      "uid": "macbook-observatory",
+      "title": "MacBook",
+      "tags": [
+        "macos",
+        "observatory"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 2,
+      "refresh": "1m",
+      "time": {
+        "from": "now-3h",
+        "to": "now"
+      },
+      "templating": {
+        "list": []
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "CPU",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", mode=\"idle\"}[5m])))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "CPU"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 2,
+          "title": "Memoria",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (avg(node_memory_internal_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\"}) + avg(node_memory_wired_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\"}) + avg(node_memory_compressed_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\"})) / avg(node_memory_total_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\"})",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Memoria"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 75
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 3,
+          "title": "Disco usado",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 12,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - avg(node_filesystem_avail_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\", mountpoint=\"/System/Volumes/Data\"}) / avg(node_filesystem_size_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\", mountpoint=\"/System/Volumes/Data\"}))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Disco usado"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 80
+                  },
+                  {
+                    "color": "red",
+                    "value": 92
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 4,
+          "title": "Carga 1 min",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 18,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(node_load1{instance=\"macbook-pro:9100\", job=\"node-exporter\"})",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Carga 1 min"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 8
+                  },
+                  {
+                    "color": "red",
+                    "value": 16
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "graphMode": "area"
+          }
+        },
+        {
+          "id": 5,
+          "title": "Disco · lectura",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 6
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(node_disk_read_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=~\"disk.+\"}[5m]))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Disco · lectura"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 6,
+          "title": "Disco · escritura",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 6,
+            "y": 6
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(node_disk_written_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=~\"disk.+\"}[5m]))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Disco · escritura"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 7,
+          "title": "Red · bajada",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 12,
+            "y": 6
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(node_network_receive_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=\"en0\"}[5m])) * 8",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Red · bajada"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bps"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 8,
+          "title": "Red · subida",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 18,
+            "y": 6
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(node_network_transmit_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=\"en0\"}[5m])) * 8",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Red · subida"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bps"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 9,
+          "title": "Disco libre",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 8,
+            "x": 0,
+            "y": 12
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(node_filesystem_avail_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\", mountpoint=\"/System/Volumes/Data\"})",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Disco libre"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "options": {
+            "graphMode": "area"
+          }
+        },
+        {
+          "id": 10,
+          "title": "Memoria comprimida",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 8,
+            "x": 8,
+            "y": 12
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(node_memory_compressed_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\"})",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Memoria comprimida"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "options": {
+            "graphMode": "area"
+          }
+        },
+        {
+          "id": 11,
+          "title": "Memoria libre",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 8,
+            "x": 16,
+            "y": 12
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(node_memory_total_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\"}) - avg(node_memory_internal_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\"}) - avg(node_memory_wired_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\"}) - avg(node_memory_compressed_bytes{instance=\"macbook-pro:9100\", job=\"node-exporter\"})",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Memoria libre"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "options": {
+            "graphMode": "area"
+          }
+        },
+        {
+          "id": 12,
+          "title": "Scrape OK",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 8,
+            "x": 0,
+            "y": 18
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "up{job=\"node-exporter\", instance=\"macbook-pro:9100\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Scrape OK"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "min": 0,
+              "max": 1
+            },
+            "overrides": []
+          },
+          "options": {
+            "graphMode": "none"
+          }
+        },
+        {
+          "id": 13,
+          "title": "Minutos sin datos",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 8,
+            "x": 8,
+            "y": 18
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "(time() - max_over_time(timestamp(up{job=\"node-exporter\", instance=\"macbook-pro:9100\"} == 1)[7d:1m])) / 60",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Minutos sin datos"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 15
+                  },
+                  {
+                    "color": "red",
+                    "value": 60
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "graphMode": "area"
+          }
+        }
+      ]
+    }

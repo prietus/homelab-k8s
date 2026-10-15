@@ -1,0 +1,83 @@
+# pastebin (prietus/pastebin) — expuesto en https://paste.example.com
+# Imagen: gunicorn en :8080, declara volumen /data (pastes/uploads).
+# /data en PVC local-path (seguro para sqlite y para ficheros); el PV local-path
+# fija el pod a su nodo, así los pastes sobreviven reinicios.
+# TLS lo termina Traefik con el cert wildcard *.example.com (tlsStore default).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pastebin
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pastebin-data-longhorn
+  namespace: pastebin
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn          # migrado de local-path -> longhorn (replicado/HA) 2026-06-05
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pastebin
+  namespace: pastebin
+  labels: { app: pastebin }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }          # un solo pod sobre el mismo /data
+  selector:
+    matchLabels: { app: pastebin }
+  template:
+    metadata:
+      labels: { app: pastebin }
+    spec:
+      containers:
+        - name: pastebin
+          image: prietus/pastebin:latest
+          imagePullPolicy: Always       # tu imagen; coge la última al redesplegar
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - name: PASTE_BASE_URL          # URL pública con la que la app construye los enlaces de los pastes
+              value: "https://paste.example.com"
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { memory: 512Mi }
+          readinessProbe:
+            tcpSocket: { port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: pastebin-data-longhorn }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pastebin
+  namespace: pastebin
+spec:
+  selector: { app: pastebin }
+  ports:
+    - { name: http, port: 8080, targetPort: 8080 }
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: pastebin
+  namespace: pastebin
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`paste.example.com`)
+      kind: Rule
+      services:
+        - name: pastebin
+          port: 8080
+  tls: {}                                # cert wildcard por defecto del tlsStore

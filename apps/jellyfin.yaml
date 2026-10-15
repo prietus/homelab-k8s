@@ -1,0 +1,101 @@
+# Jellyfin — media server, expuesto en https://jelly.example.com
+# Media: 4 carpetas servidas por NFS desde el master (192.168.1.34:/mnt/data20/Media/*),
+#        montadas READ-ONLY (Jellyfin nunca escribe sobre tus datos).
+# Config: PVC local-path (Jellyfin usa sqlite para la librería -> NFS no es seguro).
+#         El PV local-path fija el pod a su nodo, así la librería sobrevive reinicios.
+# TLS lo termina Traefik con el cert wildcard *.example.com (tlsStore default).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jellyfin
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-config-longhorn
+  namespace: jellyfin
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn          # migrado de local-path -> longhorn (replicado/HA) 2026-06-05
+  resources:
+    requests:
+      storage: 15Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellyfin
+  namespace: jellyfin
+  labels: { app: jellyfin }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }          # un solo pod; evita 2 procesos sobre la misma config
+  selector:
+    matchLabels: { app: jellyfin }
+  template:
+    metadata:
+      labels: { app: jellyfin }
+    spec:
+      containers:
+        - name: jellyfin
+          image: jellyfin/jellyfin:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8096 }
+          env:
+            - name: JELLYFIN_PublishedServerUrl
+              value: "https://jelly.example.com"
+            - name: TZ
+              value: "Europe/Madrid"
+          volumeMounts:
+            - { name: config, mountPath: /config }
+            - { name: cache,  mountPath: /cache }
+            - { name: movies, mountPath: /media/Movies, readOnly: true }
+            - { name: shows,  mountPath: /media/Shows,  readOnly: true }
+            - { name: rips,   mountPath: /media/rips,   readOnly: true }
+            - { name: dsf,    mountPath: /media/dsf,    readOnly: true }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits:   { memory: 4Gi }     # sin límite de CPU: el transcode necesita ráfagas
+          readinessProbe:
+            httpGet: { path: /health, port: 8096 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: config
+          persistentVolumeClaim: { claimName: jellyfin-config-longhorn }
+        - name: cache
+          emptyDir: {}
+        - name: movies
+          nfs: { server: 192.168.1.34, path: /mnt/data20/Media/Movies, readOnly: true }
+        - name: shows
+          nfs: { server: 192.168.1.34, path: /mnt/data20/Media/Shows,  readOnly: true }
+        - name: rips
+          nfs: { server: 192.168.1.34, path: /mnt/data20/Media/rips,   readOnly: true }
+        - name: dsf
+          nfs: { server: 192.168.1.34, path: /mnt/data20/Media/dsf,    readOnly: true }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jellyfin
+  namespace: jellyfin
+spec:
+  selector: { app: jellyfin }
+  ports:
+    - { name: http, port: 8096, targetPort: 8096 }
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: jellyfin
+  namespace: jellyfin
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`jelly.example.com`)
+      kind: Rule
+      services:
+        - name: jellyfin
+          port: 8096
+  tls: {}                                # usa el cert wildcard por defecto del tlsStore

@@ -1,0 +1,99 @@
+# node_exporter del MacBook (192.168.1.111:9100), scrapeado como target externo.
+# El Service no tiene selector: los endpoints se declaran a mano porque el
+# target no es un Pod. El label prometheus-job=node-exporter es el que el
+# ServiceMonitor copia a la etiqueta `job` (jobLabel), de modo que el dashboard
+# "Node Exporter / MacOS" que ya trae kube-prometheus-stack funciona sin tocarlo.
+#
+# El instance se fija a macbook-pro:9100 en vez de a la IP: así los favoritos de
+# Observatory sobreviven a un cambio de IP (solo habría que editar el
+# EndpointSlice de abajo). Aun así, conviene reservar la IP por DHCP.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mac-node-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: mac-node-exporter   # lo selecciona el ServiceMonitor
+    prometheus-job: node-exporter               # -> job="node-exporter"
+spec:
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: 9100
+      protocol: TCP
+---
+# Endpoints "clásico" a propósito, NO un EndpointSlice: el Prometheus de este
+# cluster descubre con `role: endpoints` (así genera el operator todos los jobs),
+# y el mirroring del control-plane va de Endpoints -> EndpointSlice, no al revés.
+# Un EndpointSlice suelto no lo ve nadie. La alternativa sería poner
+# serviceDiscoveryRole: EndpointSlice en el CR Prometheus, pero eso es global.
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: mac-node-exporter                       # debe llamarse igual que el Service
+  namespace: monitoring
+subsets:
+  - addresses:
+      - ip: 192.168.1.110                       # <- IP del MacBook en la LAN (DHCP: reservar en el router)
+    ports:
+      - name: metrics
+        port: 9100
+        protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mac-node-exporter
+  namespace: monitoring
+spec:
+  jobLabel: prometheus-job
+  namespaceSelector:
+    matchNames: [monitoring]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mac-node-exporter
+  endpoints:
+    - port: metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      relabelings:
+        - action: replace
+          targetLabel: instance
+          replacement: macbook-pro:9100
+---
+# Alerta: el MacBook dejó de responder al scrape. Pasó el 19-sep-2026 (el DHCP
+# le cambió la IP de .111 a .110) y estuvo 3 días y medio sin datos sin que
+# saltara nada.
+#
+# OJO con la etiqueta release=monitoring: el CR Prometheus filtra las reglas con
+# ruleSelector matchLabels release=monitoring. Sin ella el operator ignora este
+# PrometheusRule en silencio, igual que ignoraba el EndpointSlice de más arriba.
+#
+# `for: 12h` es deliberado: un portátil apagado de noche pondría up=0 durante
+# horas y no es una avería. 12h significa "esto ya no es que esté apagado".
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mac-node-exporter
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: macbook
+      rules:
+        - alert: MacBookExporterDown
+          expr: up{job="node-exporter", instance="macbook-pro:9100"} == 0
+          for: 12h
+          labels:
+            severity: warning
+          annotations:
+            summary: El node_exporter del MacBook lleva 12h sin responder
+            description: >-
+              Prometheus no consigue scrapear macbook-pro:9100 desde hace 12h.
+              Si el portátil está encendido y en casa, lo más probable es que el
+              DHCP le haya cambiado la IP. Comprueba con `ipconfig getifaddr en0`
+              y actualiza la IP del Endpoints en
+              cluster-apps/mac-node-exporter.yaml. Solución definitiva: reserva
+              DHCP en el router (ojo, el Mac usa dirección Wi-Fi privada).

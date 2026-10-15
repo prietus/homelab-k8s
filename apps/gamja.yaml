@@ -1,0 +1,542 @@
+# gamja — cliente IRC web (SPA) servido en https://gamja.example.com
+# gamja NO tiene imagen oficial y REQUIERE un build con Parcel (preact/htm con bare imports).
+# Como no hay registry en el cluster, un initContainer `node` clona gamja (versión FIJA)
+# y corre `parcel build` sobre un PVC longhorn; luego un nginx sirve ese estático.
+# El PVC + guard por versión hace que los reinicios normales sean instantáneos (no rebuildea
+# ni necesita internet); sólo rebuildea al cambiar GAMJA_REF.
+#
+# gamja habla IRC-over-WebSocket, no IRC/TCP. Se conecta por defecto a /socket sobre SU host.
+# Por eso el IngressRoute parte gamja.example.com en dos:
+#   - /socket        -> service soju:8080 (ws) en el namespace soju (allowCrossNamespace)
+#   - resto (/, ...) -> service gamja:80 (nginx con el estático)
+# Al compartir host (gamja.example.com) es same-origin, así que el http-origin por defecto de
+# soju ("sólo el host de la petición") autoriza el upgrade sin configurar nada más.
+# TLS lo termina Traefik con el cert wildcard *.example.com (tlsStore default).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gamja
+---
+# config.json que gamja lee EN RUNTIME (no en build). Se copia dentro del estático servido.
+# url=/socket -> gamja abre wss://gamja.example.com/socket (Traefik lo enruta a soju).
+# auth=mandatory -> soju es un bouncer: el login siempre pide usuario + contraseña.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gamja-config
+  namespace: gamja
+data:
+  config.json: |
+    {
+      "server": {
+        "url": "/socket",
+        "auth": "mandatory"
+      }
+    }
+---
+# Tema visual "liquid glass" (ver gamja-deploy en memoria / cabecera del CSS).
+# Copia con comentarios en inglés en ~/gamja/theme-liquid-glass.css; el tema
+# anterior ("terminal dusk") sigue guardado en ~/gamja/theme.css por si se quiere volver.
+# El initContainer lo anexa a style.css de gamja ANTES del parcel build, así queda
+# bundleado y cache-busted. Editar este CSS + rollout restart -> el marker por hash
+# del initContainer detecta el cambio y rebuildea.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gamja-theme
+  namespace: gamja
+data:
+  theme.css: |
+    /* ============================================================
+       Tema "liquid glass" para gamja — example.com
+       Homenaje sólo-oscuro al Liquid Glass de macOS Tahoe: paneles
+       de grafito traslúcidos (backdrop blur + saturate) flotando
+       sobre un fondo ambiental, bordes hairline y la paleta de
+       acentos del sistema de macOS (azul primario). Sans proporcional
+       del sistema en todo — mensajes sin monospace.
+       Se anexa al final de style.css: pisa por orden de cascada
+       (misma specificity que gamja, va después). Todo se declara en
+       :root sin condiciones, así que también gana a la media query
+       de modo oscuro de gamja y se queda oscuro aunque el SO esté
+       en modo claro.
+       ============================================================ */
+
+    :root {
+      color-scheme: dark;
+
+      /* paleta del sistema macOS (variantes de modo oscuro) */
+      --blue: #0a84ff;
+      --blue-bright: #409cff;
+      --purple: #bf5af2;
+      --pink: #ff375f;
+      --red: #ff453a;
+      --orange: #ff9f0a;
+      --yellow: #ffd60a;
+      --green: #32d74b;
+      --teal: #64d2ff;
+
+      /* fondos y cristal */
+      --main-background: #101014;
+      --main-color: #f5f5f7;
+      --sidebar-background: rgba(22, 22, 27, 0.55);
+      --surface: rgba(44, 44, 52, 0.55);
+      --border: rgba(255, 255, 255, 0.09);
+      --edge-light: rgba(255, 255, 255, 0.14);   /* brillo especular en el borde superior del cristal */
+      --gray: rgba(235, 235, 245, 0.55);
+
+      --accent: var(--blue);
+      --accent-strong: var(--blue-bright);
+      --on-accent: #ffffff;
+      --link: var(--blue-bright);
+      --danger: var(--red);
+      --highlight-bg: rgba(10, 132, 255, 0.14);
+      --focus-ring: rgba(10, 132, 255, 0.45);
+      --hover: rgba(255, 255, 255, 0.06);
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+      --glass-blur: blur(24px) saturate(1.7);
+
+      --button-background: var(--blue);
+      --button-background-hover: var(--blue-bright);
+      --button-color: #ffffff;
+      --button-border: transparent;
+      --danger-button-background: var(--red);
+      --danger-button-background-hover: #ff6961;
+      --danger-button-color: #ffffff;
+      --danger-button-border: transparent;
+      --expander-background: rgba(255, 255, 255, 0.12);
+      --expander-background-hover: rgba(255, 255, 255, 0.20);
+
+      --font-ui: -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+      --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;   /* sólo para kbd */
+      --radius: 10px;
+      --radius-sm: 7px;
+      --radius-lg: 18px;
+    }
+
+    /* ---------- fondo ambiental (lo que el cristal refracta) ---------- */
+    body {
+      font-family: var(--font-ui);
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+      color: var(--main-color);
+      background:
+        radial-gradient(1100px 750px at 85% -10%, rgba(10, 132, 255, 0.18), transparent 60%),
+        radial-gradient(950px 700px at -10% 110%, rgba(191, 90, 242, 0.13), transparent 60%),
+        radial-gradient(700px 500px at 45% 55%, rgba(100, 210, 255, 0.05), transparent 65%),
+        var(--main-background);
+      background-attachment: fixed;
+    }
+    /* la zona de mensajes queda transparente para que se vea el fondo ambiental */
+    #buffer { background: transparent; }
+
+    /* ---------- tipografía: mensajes proporcionales ---------- */
+    #buffer .logline {
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ---------- cromo de cristal ---------- */
+    /* fondo traslúcido + backdrop blur = el panel liquid glass */
+    #buffer-list, #member-list, #buffer-header, #member-list-header, #composer {
+      -webkit-backdrop-filter: var(--glass-blur);   /* Safari necesita el prefijo */
+      backdrop-filter: var(--glass-blur);
+    }
+    #buffer-header, #member-list-header, #composer { background: rgba(18, 18, 23, 0.55); }
+
+    /* ---------- scrollbars ---------- */
+    html { scrollbar-color: rgba(255, 255, 255, 0.25) transparent; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.18);
+      border-radius: 8px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.30);
+      background-clip: padding-box;
+    }
+
+    /* ---------- botones ---------- */
+    button {
+      border-radius: var(--radius-sm);
+      font-family: var(--font-ui);
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      /* brillo especular sobre el color que viene de --button-background */
+      background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 55%);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+      transition: background 0.15s ease, transform 0.05s ease;
+    }
+    button:active { transform: translateY(1px); }
+    /* botones de la barra de acciones: fantasma, no azul sólido */
+    .actions button {
+      border: none;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      background-image: none;
+      box-shadow: none;
+      color: var(--main-color);
+    }
+    .actions button:hover { background: var(--hover); }
+
+    /* ---------- inputs / formularios ---------- */
+    form input[type="text"], form input[type="username"], form input[type="password"],
+    form input[type="url"], form input[type="email"], form input[type="search"] {
+      color: var(--main-color);
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.5rem 0.625rem;
+      font-family: var(--font-ui);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    form input[type="text"]:focus, form input[type="username"]:focus, form input[type="password"]:focus,
+    form input[type="url"]:focus, form input[type="email"]:focus, form input[type="search"]:focus {
+      outline: 0;
+      border-color: rgba(10, 132, 255, 0.85);
+      box-shadow: 0 0 0 3.5px var(--focus-ring);   /* el halo de foco de macOS */
+    }
+
+    /* ---------- composer (input de mensaje) ---------- */
+    #composer { border-top: 1px solid var(--border); }
+    #composer input {
+      font-family: var(--font-ui);
+      font-size: 14px;
+      height: 44px;
+      padding: 0 14px;
+      color: var(--main-color);
+      background: transparent;
+    }
+    #composer input::placeholder { color: var(--gray); }
+    #composer:focus-within { box-shadow: inset 0 2px 0 -1px var(--accent); }
+
+    /* ---------- barra lateral: lista de buffers ---------- */
+    #buffer-list { border-right: 1px solid var(--border); }
+    #buffer-list ul { padding: 6px; }
+    #buffer-list li a {
+      border-radius: var(--radius-sm);
+      padding: 5px 10px;
+      margin: 1px 0;
+      transition: background 0.12s ease, color 0.12s ease;
+    }
+    #buffer-list li:not(.type-server) a { padding-left: 22px; }
+    #buffer-list li a:hover { background: var(--hover); text-decoration: none; }
+    #buffer-list li.type-server a { font-weight: 600; letter-spacing: 0.02em; opacity: 0.85; }
+    #buffer-list li.unread-message a { color: var(--main-color); font-weight: 600; }
+    #buffer-list li.unread-highlight a { color: var(--blue-bright); font-weight: 700; }
+    #buffer-list li.error a { color: var(--danger); }
+    /* canal activo: la selección de sidebar de macOS — píldora azul con brillo */
+    #buffer-list li.active a, #buffer-list li.active a:hover {
+      color: var(--on-accent);
+      background: linear-gradient(180deg, #3395ff, #0a84ff);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+      font-weight: 600;
+    }
+
+    /* ---------- barra lateral: miembros ---------- */
+    #member-list { border-left: 1px solid var(--border); }
+    #member-list ul { padding: 6px; }
+    #member-list li a {
+      border-radius: var(--radius-sm);
+      padding: 4px 10px;
+      margin: 1px 0;
+      transition: background 0.12s ease;
+    }
+    #member-list li a:hover { background: var(--hover); text-decoration: none; }
+    #member-list-header {
+      font-family: var(--font-ui);
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--gray);
+      border-bottom: 1px solid var(--border);
+      border-left: 1px solid var(--border);
+    }
+
+    /* roles de miembros: mapeados a la fila de acentos de macOS */
+    .membership.owner { color: var(--pink); }
+    .membership.admin { color: var(--purple); }
+    .membership.operator { color: var(--green); }
+    .membership.halfop { color: var(--orange); }
+    .membership.voice { color: var(--yellow); }
+
+    /* ---------- cabecera del buffer ---------- */
+    #buffer-header { border-bottom: 1px solid var(--border); font-family: var(--font-ui); }
+    #buffer-header .title { font-weight: 700; }
+    #buffer-header .description { color: var(--gray); font-size: 13px; }
+
+    /* ---------- mensajes ---------- */
+    #buffer .logline-list { padding: 8px 10px; }
+    #buffer .logline {
+      padding: 2px 8px;
+      border-radius: var(--radius-sm);
+    }
+    #buffer .logline:hover { background: var(--hover); }
+    a { color: var(--link); }
+    a.nick { font-weight: 600; }
+    a.timestamp {
+      color: var(--gray);
+      font-size: 11px;
+      opacity: 0.85;
+      font-variant-numeric: tabular-nums;   /* mantiene la columna de horas alineada con fuente proporcional */
+    }
+    #buffer .talk, #buffer .motd { color: var(--main-color); }
+    #buffer .me-tell { color: var(--gray); font-style: italic; }
+    #buffer .error { color: var(--danger); }
+    .error-text { color: var(--danger); }
+
+    /* highlight (mención): cristal tintado de azul + barra de acento */
+    #buffer .highlight {
+      background: var(--highlight-bg);
+      box-shadow: inset 3px 0 0 var(--accent);
+      border-radius: var(--radius-sm);
+    }
+    #buffer .highlight .nick {
+      color: var(--blue-bright);
+      background: transparent;
+      font-weight: 700;
+    }
+
+    /* separadores */
+    #buffer .separator { color: var(--gray); font-size: 11px; letter-spacing: 0.08em; }
+    #buffer .date-separator::before, #buffer .date-separator::after { border-color: var(--border); }
+    #buffer .unread-separator { color: var(--blue-bright); }
+    #buffer .unread-separator::before, #buffer .unread-separator::after { border-color: var(--accent); }
+
+    /* ---------- pantalla de login (tarjeta de cristal flotante) ---------- */
+    #connect {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;              /* el fondo ambiental se ve detrás de la tarjeta */
+    }
+    #connect form {
+      background: rgba(30, 30, 36, 0.60);
+      -webkit-backdrop-filter: blur(40px) saturate(1.8);
+      backdrop-filter: blur(40px) saturate(1.8);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow);
+      padding: 28px 26px;
+      max-width: 360px;
+      width: 100%;
+    }
+    #connect form h2, #connect form h3 { margin-top: 0; }
+
+    /* ---------- diálogos ---------- */
+    .dialog {
+      background-color: rgba(0, 0, 0, 0.45);
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+    }
+    .dialog .dialog-body {
+      background: rgba(30, 30, 36, 0.70);
+      -webkit-backdrop-filter: blur(40px) saturate(1.8);
+      backdrop-filter: blur(40px) saturate(1.8);
+      color: var(--main-color);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow);
+      padding: 20px;
+    }
+
+    /* ---------- toast de error ---------- */
+    #error-msg {
+      background: rgba(84, 22, 18, 0.65);
+      -webkit-backdrop-filter: var(--glass-blur);
+      backdrop-filter: var(--glass-blur);
+      border: 1px solid rgba(255, 69, 58, 0.35);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      color: #ffffff;
+    }
+
+    /* ---------- kbd ---------- */
+    kbd {
+      font-family: var(--font-mono);
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.10);
+    }
+
+    /* ---------- accesibilidad ---------- */
+    a:focus-visible, button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
+      outline: 2px solid var(--blue-bright);
+      outline-offset: 2px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
+    /* respeta "Reducir transparencia" de macOS: paneles sólidos, sin blur */
+    @media (prefers-reduced-transparency: reduce) {
+      :root {
+        --sidebar-background: #17171b;
+        --surface: #232329;
+      }
+      #buffer-list, #member-list, #buffer-header, #member-list-header, #composer,
+      #connect form, .dialog, .dialog .dialog-body, #error-msg {
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+      }
+      #buffer-header, #member-list-header, #composer { background: #141418; }
+      #connect form, .dialog .dialog-body { background: #1e1e24; }
+    }
+---
+# El estático construido vive aquí (persistente -> reinicios sin rebuild ni red).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gamja-web-longhorn
+  namespace: gamja
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gamja
+  namespace: gamja
+  labels: { app: gamja }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }          # PVC RWO: un solo pod monta el volumen del estático
+  selector:
+    matchLabels: { app: gamja }
+  template:
+    metadata:
+      labels: { app: gamja }
+      annotations:
+        # master 2026-05-21; beta.11 (2025) tenía bugs de estado ya arreglados en master.
+        gamja-ref: "2c19f083c1c5b69b68ca5973d003f281960d3e0f"   # cambia esto para forzar rebuild a otra versión
+    spec:
+      initContainers:
+        - name: build                     # clona la versión fija y buildea con parcel -> /web
+          image: node:22-alpine
+          env:
+            # tag, rama o commit sha (el tarball de codeberg acepta los tres)
+            - { name: GAMJA_REF, value: "2c19f083c1c5b69b68ca5973d003f281960d3e0f" }
+            - { name: HOME, value: /workspace }   # cache de npm/parcel en el emptyDir writable
+          command: ["sh","-c"]
+          args:
+            - |
+              set -eu
+              MARK="/web/.gamja-ref"
+              # el marker incluye el hash del tema: si cambia el CSS, rebuildea aunque no cambie GAMJA_REF
+              THEME_HASH=none
+              [ -f /theme/theme.css ] && THEME_HASH=$(md5sum /theme/theme.css | cut -c1-10)
+              WANT="$GAMJA_REF+theme.$THEME_HASH"
+              if [ -f "$MARK" ] && [ "$(cat "$MARK")" = "$WANT" ]; then
+                echo "gamja $WANT ya construido; sirvo lo existente"; exit 0
+              fi
+              rm -rf /workspace/src && mkdir -p /workspace/src
+              wget -qO- "https://codeberg.org/emersion/gamja/archive/$GAMJA_REF.tar.gz" \
+                | tar xz --strip-components=1 -C /workspace/src
+              cd /workspace/src
+              # anexa el tema custom a style.css ANTES del build -> queda bundleado y cache-busted
+              if [ -f /theme/theme.css ]; then
+                printf '\n\n/* ===== tema custom (example.com) ===== */\n' >> style.css
+                cat /theme/theme.css >> style.css
+                echo "tema custom anexado a style.css"
+              fi
+              npm install
+              npm run build
+              # publica el build en el volumen que sirve nginx (preserva lost+found del PVC)
+              find /web -mindepth 1 -maxdepth 1 ! -name 'lost+found' -exec rm -rf {} +
+              cp -a dist/. /web/
+              cp /config/config.json /web/config.json
+              echo "$WANT" > "$MARK"
+              echo "gamja $WANT construido y publicado en /web"
+          volumeMounts:
+            - { name: web,       mountPath: /web }
+            - { name: config,    mountPath: /config, readOnly: true }
+            - { name: theme,     mountPath: /theme,  readOnly: true }
+            - { name: workspace, mountPath: /workspace }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits:   { memory: 1Gi }
+      containers:
+        - name: nginx                     # sirve el estático; nunca ve /socket (lo enruta Traefik antes)
+          image: nginx:alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 80 }
+          volumeMounts:
+            - { name: web, mountPath: /usr/share/nginx/html, readOnly: true }
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits:   { memory: 128Mi }
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: web
+          persistentVolumeClaim: { claimName: gamja-web-longhorn }
+        - name: config
+          configMap: { name: gamja-config }
+        - name: theme
+          configMap: { name: gamja-theme }
+        - name: workspace
+          emptyDir: {}                    # workspace efímero del build (node_modules, cache)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gamja
+  namespace: gamja
+spec:
+  selector: { app: gamja }
+  ports:
+    - { name: http, port: 80, targetPort: 80 }
+---
+# Borra la oferta de compresión WebSocket (permessage-deflate) antes de llegar a soju.
+# La librería WS de soju (coder/websocket) tiene bugs de deflate con Safari/WebKit:
+# el socket muere con 1006 "network connection was lost" en ráfagas grandes (backlog).
+# Sin la cabecera no se negocia compresión y todos los navegadores usan tramas planas.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: gamja-ws-nocompress
+  namespace: gamja
+spec:
+  headers:
+    customRequestHeaders:
+      Sec-WebSocket-Extensions: ""      # valor vacío = Traefik elimina la cabecera
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: gamja
+  namespace: gamja
+spec:
+  entryPoints: [websecure]
+  routes:
+    # /socket -> WebSocket de soju (namespace soju, allowCrossNamespace=true en Traefik).
+    # priority mayor para ganar a la regla del host a secas.
+    - match: Host(`gamja.example.com`) && PathPrefix(`/socket`)
+      kind: Rule
+      priority: 20
+      middlewares:
+        - name: gamja-ws-nocompress
+      services:
+        - name: soju
+          namespace: soju
+          port: 8080
+    # resto del host -> estático de gamja
+    - match: Host(`gamja.example.com`)
+      kind: Rule
+      priority: 10
+      services:
+        - name: gamja
+          port: 80
+  tls: {}                                # cert wildcard por defecto del tlsStore

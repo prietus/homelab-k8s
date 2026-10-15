@@ -1,0 +1,48 @@
+# Traefik — ingress controller del cluster Odroid (chart v40 / Traefik v3.7)
+# Service LoadBalancer toma la IP flotante de MetalLB (192.168.1.11)
+service:
+  type: LoadBalancer
+  annotations:
+    metallb.io/loadBalancerIPs: "192.168.1.11"
+
+ports:
+  web:
+    exposedPort: 80
+    expose:
+      default: true
+    http:
+      redirections:            # todo HTTP -> HTTPS permanente
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    exposedPort: 443
+    expose:
+      default: true
+    # http.tls.enabled = true por defecto; el cert por defecto sale del tlsStore
+  irc:                         # entrypoint TCP dedicado para soju (IRC sobre TLS)
+    port: 6697
+    exposedPort: 6697
+    expose:
+      default: true
+    protocol: TCP
+
+# Certificado wildcard *.example.com como cert por defecto (lo emite cert-manager)
+tlsStore:
+  default:
+    defaultCertificate:
+      secretName: wildcard-example-com-tls
+
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true
+  kubernetesIngress:
+    enabled: true
+    publishedService:
+      enabled: true
+
+ingressRoute:
+  dashboard:
+    enabled: false

@@ -1,0 +1,16 @@
+# Certificado wildcard *.example.com emitido por cert-manager (DNS-01 Cloudflare)
+# El Secret resultante (wildcard-example-com-tls) lo usa Traefik como cert por defecto.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-example-com
+  namespace: traefik
+spec:
+  secretName: wildcard-example-com-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: "*.example.com"
+  dnsNames:
+    - "*.example.com"
+    - "example.com"

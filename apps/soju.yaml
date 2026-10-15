@@ -1,0 +1,103 @@
+# soju — IRC bouncer (imagen oficial codeberg.org/emersion/soju; migrado de mpldr/soju v0.6 -> v0.11.1 2026-10-11, backup db en PVC: soju.db.v0.6.bak)
+# Config gestionado por ConfigMap (scfg). soju escucha IRC plano en 6667;
+# Traefik termina el TLS (cert wildcard) en el entrypoint irc (6697).
+# Además escucha IRC-over-WebSocket en 8080 para el cliente web gamja (ver gamja.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: soju-config
+  namespace: soju
+data:
+  config: |
+    listen irc+insecure://0.0.0.0:6667
+    # gamja habla IRC-over-WebSocket; Traefik termina el wss y reenvía ws plano aquí.
+    # http-origin no se toca: por defecto soju sólo autoriza el mismo host, y gamja
+    # sirve tanto la web como /socket bajo gamja.example.com (same-origin) -> autorizado.
+    listen ws+insecure://0.0.0.0:8080
+    listen unix+admin:///data/admin.sock
+    hostname irc.example.com
+    title example.com
+    db sqlite3 /data/soju.db
+    message-store db
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: soju-data-longhorn
+  namespace: soju
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn          # migrado de local-path -> longhorn (replicado/HA) 2026-06-05
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soju
+  namespace: soju
+  labels: { app: soju }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: soju }
+  template:
+    metadata:
+      labels: { app: soju }
+      annotations:
+        config-hash: "v4-official-v0.11.1-ws"     # bump al añadir el listener ws -> fuerza rollout
+    spec:
+      initContainers:
+        - name: prepare                       # crea el dir de historial (idempotente, NO borra la db)
+          image: busybox:1.36                 # rm admin.sock: limpia socket obsoleto tras apagado sucio (corte de luz)
+          command: ["sh","-c","mkdir -p /data/logs; rm -f /data/admin.sock"]
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      containers:
+        - name: soju
+          image: codeberg.org/emersion/soju:v0.11.1
+          imagePullPolicy: IfNotPresent
+          command: ["soju"]                   # control total: arranco soju con MI config
+          args: ["-config", "/etc/soju/config"]   # sin -debug: logueaba contraseñas en claro
+          ports:
+            - { name: irc, containerPort: 6667 }
+            - { name: ws,  containerPort: 8080 }   # IRC-over-WebSocket (gamja)
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: config, mountPath: /etc/soju, readOnly: true }
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits:   { memory: 256Mi }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: soju-data-longhorn }
+        - name: config
+          configMap:
+            name: soju-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: soju
+  namespace: soju
+spec:
+  selector: { app: soju }
+  ports:
+    - { name: irc, port: 6667, targetPort: 6667 }
+    - { name: ws,  port: 8080, targetPort: 8080 }   # WebSocket para gamja (mismo namespace/cluster)
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: soju
+  namespace: soju
+spec:
+  entryPoints: [irc]
+  routes:
+    - match: HostSNI(`irc.example.com`)
+      services:
+        - name: soju
+          port: 6667
+  tls: {}

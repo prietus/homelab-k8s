@@ -1,0 +1,135 @@
+# unicornio — sirve un SVG estatico (unicornio-pedo-arcoiris) en https://xn--3s9h.example.com (🦄.example.com)
+# nginx sirve el SVG como index.html. TLS lo termina Traefik con el wildcard *.example.com (tlsStore default).
+# DNS: registro A xn--3s9h.example.com -> IP de casa (id RECORD_ID_1, ya en el DDNS).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: unicornio
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: unicornio-svg
+  namespace: unicornio
+data:
+  index.html: |
+    <svg width="100%" viewBox="0 0 680 420" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Unicornio animado tirándose un pedo arcoíris</title>
+    <desc>Un unicornio blanco con melena de colores que emite un arcoíris animado por detrás mientras unas estrellas brillan.</desc>
+    <style>
+    @keyframes floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    @keyframes tailwag { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-12deg); } }
+    @keyframes puff { 0% { transform: scale(0.2) translateX(0); opacity: 0; } 20% { opacity: 0.9; } 100% { transform: scale(1.4) translateX(40px); opacity: 0; } }
+    @keyframes rainbowgrow { 0% { stroke-dashoffset: 520; opacity: 0; } 30% { opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 1; } }
+    @keyframes twinkle { 0%,100% { opacity: 0.2; transform: scale(0.7); } 50% { opacity: 1; transform: scale(1.1); } }
+    @keyframes blink { 0%,92%,100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
+    .body { animation: floaty 3.2s ease-in-out infinite; transform-origin: center; }
+    .tail { animation: tailwag 1.6s ease-in-out infinite; transform-origin: 470px 250px; }
+    .eye { animation: blink 4s infinite; transform-origin: 250px 180px; }
+    .rb { fill: none; stroke-width: 14; stroke-linecap: round; stroke-dasharray: 520; animation: rainbowgrow 2.6s ease-out infinite; }
+    .puff { animation: puff 1.8s ease-out infinite; transform-origin: 470px 270px; }
+    .star { animation: twinkle 2.4s ease-in-out infinite; transform-origin: center; }
+    </style>
+
+    <g class="body">
+      <ellipse cx="320" cy="250" rx="130" ry="80" fill="#ffffff" stroke="#e8d9f0" stroke-width="3"/>
+      <rect x="230" y="290" width="18" height="60" rx="9" fill="#ffffff" stroke="#e8d9f0" stroke-width="3"/>
+      <rect x="270" y="295" width="18" height="60" rx="9" fill="#f3eafa" stroke="#e8d9f0" stroke-width="3"/>
+      <rect x="350" y="295" width="18" height="60" rx="9" fill="#f3eafa" stroke="#e8d9f0" stroke-width="3"/>
+      <rect x="390" y="290" width="18" height="60" rx="9" fill="#ffffff" stroke="#e8d9f0" stroke-width="3"/>
+
+      <path d="M200 250 Q150 240 160 180 Q165 150 210 165 Q250 180 240 230 Z" fill="#ffffff" stroke="#e8d9f0" stroke-width="3"/>
+      <circle cx="240" cy="185" r="62" fill="#ffffff" stroke="#e8d9f0" stroke-width="3"/>
+      <path d="M210 240 Q200 270 225 275 Q255 278 250 245 Z" fill="#ffffff" stroke="#e8d9f0" stroke-width="3"/>
+      <circle cx="222" cy="258" r="3.5" fill="#caa8e0"/>
+
+      <path d="M250 135 L262 75 L278 138 Z" fill="#ffd54f" stroke="#f0b429" stroke-width="2"/>
+      <path d="M215 140 Q205 110 230 108 Q235 128 248 138 Z" fill="#ffffff" stroke="#e8d9f0" stroke-width="3"/>
+
+      <g class="eye"><circle cx="250" cy="180" r="9" fill="#3a2a4d"/><circle cx="253" cy="177" r="3" fill="#ffffff"/></g>
+
+      <path d="M270 130 Q320 120 330 175 Q300 165 285 200 Q270 175 255 200 Q255 160 270 130 Z" fill="#ff6b9d"/>
+      <path d="M285 150 Q330 150 345 210 Q315 195 300 230 Q290 200 275 225 Q280 180 285 150 Z" fill="#ffa64d"/>
+      <path d="M300 175 Q345 185 350 245 Q320 225 308 258 Q300 230 290 255 Q298 210 300 175 Z" fill="#6ec6ff"/>
+
+      <g class="tail">
+        <path d="M448 240 Q500 230 510 280 Q495 270 490 300 Q478 275 465 300 Q470 260 448 240 Z" fill="#ff6b9d"/>
+        <path d="M450 250 Q495 255 500 305 Q485 290 478 318 Q470 295 458 315 Q468 280 450 250 Z" fill="#6ec6ff"/>
+      </g>
+    </g>
+
+    <g class="rb" transform="translate(0,0)">
+      <path class="rb" style="stroke:#ff5a5f" d="M470 285 Q560 285 600 360"/>
+      <path class="rb" style="stroke:#ffa64d; animation-delay:.08s" d="M472 295 Q565 300 605 372"/>
+      <path class="rb" style="stroke:#ffd54f; animation-delay:.16s" d="M474 305 Q570 315 610 384"/>
+      <path class="rb" style="stroke:#5cd65c; animation-delay:.24s" d="M476 315 Q575 330 615 396"/>
+      <path class="rb" style="stroke:#6ec6ff; animation-delay:.32s" d="M478 325 Q580 345 620 408"/>
+      <path class="rb" style="stroke:#b388ff; animation-delay:.40s" d="M480 335 Q585 360 625 418"/>
+    </g>
+
+    <circle class="puff" cx="475" cy="280" r="14" fill="#ffd6f5" opacity="0.6"/>
+    <circle class="puff" cx="478" cy="295" r="11" fill="#d6f0ff" opacity="0.6" style="animation-delay:.6s"/>
+    <circle class="puff" cx="472" cy="305" r="9" fill="#e0ffd6" opacity="0.6" style="animation-delay:1.1s"/>
+
+    <g class="star" style="animation-delay:.2s"><path d="M120 90 l4 10 11 1 -8 8 2 11 -9 -6 -9 6 2 -11 -8 -8 11 -1 z" fill="#ffd54f"/></g>
+    <g class="star" style="animation-delay:1.0s"><path d="M560 70 l3 7 8 1 -6 6 1 8 -6 -4 -6 4 1 -8 -6 -6 8 -1 z" fill="#6ec6ff"/></g>
+    <g class="star" style="animation-delay:1.6s"><path d="M610 150 l3 7 8 1 -6 6 1 8 -6 -4 -6 4 1 -8 -6 -6 8 -1 z" fill="#ff6b9d"/></g>
+    <g class="star" style="animation-delay:.7s"><path d="M90 230 l3 7 8 1 -6 6 1 8 -6 -4 -6 4 1 -8 -6 -6 8 -1 z" fill="#b388ff"/></g>
+    </svg>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unicornio
+  namespace: unicornio
+  labels: { app: unicornio }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: unicornio }
+  template:
+    metadata:
+      labels: { app: unicornio }
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - { name: http, containerPort: 80 }
+          volumeMounts:
+            - { name: svg, mountPath: /usr/share/nginx/html, readOnly: true }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits:   { memory: 64Mi }
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 2
+            periodSeconds: 10
+      volumes:
+        - name: svg
+          configMap: { name: unicornio-svg }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: unicornio
+  namespace: unicornio
+spec:
+  selector: { app: unicornio }
+  ports:
+    - { name: http, port: 80, targetPort: 80 }
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: unicornio
+  namespace: unicornio
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`xn--3s9h.example.com`)
+      kind: Rule
+      services:
+        - name: unicornio
+          port: 80
+  tls: {}                                # cert wildcard por defecto del tlsStore

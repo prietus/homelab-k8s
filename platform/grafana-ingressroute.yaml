@@ -1,0 +1,21 @@
+# Exposición pública de Grafana en grafana.example.com (Traefik + cert wildcard).
+# El Service monitoring-grafana sigue siendo LoadBalancer de LAN (192.168.1.13);
+# esto solo añade la ruta HTTPS desde fuera, necesaria para que la revisión de
+# Apple pueda probar la app Observatory contra un Grafana real.
+#
+# OJO: esto rompe el "cero exposición" que documenta monitoring-values.yaml.
+# La pantalla de login de Grafana queda accesible desde Internet.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`grafana.example.com`)
+      kind: Rule
+      services:
+        - name: monitoring-grafana
+          port: 80
+  tls: {}                                # cert wildcard por defecto del tlsStore

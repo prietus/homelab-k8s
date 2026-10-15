@@ -1,0 +1,68 @@
+# kube-prometheus-stack — Prometheus + Grafana + Alertmanager + node-exporter + kube-state-metrics
+# Patrón homelab: Grafana en IP MetalLB de LAN (192.168.1.13), TSDB en Longhorn.
+# Ya NO es solo-LAN: cluster-apps/grafana-ingressroute.yaml publica grafana.example.com
+# por Traefik para que Apple pueda revisar la app Observatory. Al terminar la
+# revisión, borra ese IngressRoute para volver a cero exposición.
+# Grafana admin: usuario 'admin', contraseña en grafana.adminPassword (abajo).
+
+grafana:
+  adminPassword: "CHANGE_ME"
+  service:
+    type: LoadBalancer
+    annotations:
+      metallb.io/loadBalancerIPs: "192.168.1.13"
+    port: 80
+  persistence:                       # ajustes/estado de Grafana en Longhorn
+    enabled: true
+    storageClassName: longhorn
+    size: 2Gi
+  defaultDashboardsEnabled: true     # dashboards de Kubernetes/nodos incluidos
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: ""
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+  dashboards:
+    default:
+      longhorn:                      # dashboard oficial de Longhorn (grafana.com)
+        gnetId: 16888
+        revision: 9
+        datasource: Prometheus
+
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    # Descubrir ServiceMonitors/PodMonitors de CUALQUIER namespace (p.ej. Longhorn)
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+
+# node-exporter también en el master (tiene taint control-plane) para monitorizarlo
+prometheus-node-exporter:
+  tolerations:
+    - operator: Exists

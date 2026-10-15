@@ -1,0 +1,101 @@
+# DDNS Cloudflare — repunta los registros A "de casa" cuando el ISP cambia la IP publica.
+# CronJob cada 5 min: detecta IP publica (ipify), y si difiere de la que tiene Cloudflare,
+# hace PATCH de los 16 registros del cluster/casa. El token va en Secret cloudflare-ddns-token
+# (creado via kubectl, NO en este fichero) con permiso Zone:DNS:Edit.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ddns
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ddns-script
+  namespace: ddns
+data:
+  update.sh: |
+    #!/bin/sh
+    set -eu
+    ZONE="YOUR_ZONE_ID"
+    API="https://api.cloudflare.com/client/v4/zones/$ZONE/dns_records"
+    # IDs de los 16 registros A de casa (example.com). El primero (wtr) se usa de testigo.
+    IDS="RECORD_ID_1
+    RECORD_ID_2
+    RECORD_ID_3
+    RECORD_ID_4
+    RECORD_ID_5
+    RECORD_ID_6
+    RECORD_ID_7
+    RECORD_ID_8
+    RECORD_ID_9
+    RECORD_ID_10
+    RECORD_ID_11
+    RECORD_ID_12
+    RECORD_ID_13
+    RECORD_ID_14
+    RECORD_ID_15
+    RECORD_ID_16"
+
+    NEWIP=$(curl -s --max-time 15 https://api.ipify.org || true)
+    case "$NEWIP" in
+      *.*.*.*) : ;;
+      *) echo "IP publica invalida: '$NEWIP'"; exit 1 ;;
+    esac
+
+    # Testigo: si el primer registro ya tiene la IP actual, no hay nada que hacer.
+    CUR=$(curl -s --max-time 15 -H "Authorization: Bearer $TOKEN" "$API/RECORD_ID_1" \
+          | sed -n 's/.*"content":"\([^"]*\)".*/\1/p' | head -1)
+    if [ "$CUR" = "$NEWIP" ]; then
+      echo "$(date -u) sin cambios (IP=$NEWIP)"
+      exit 0
+    fi
+    echo "$(date -u) IP cambio: $CUR -> $NEWIP. Actualizando 16 registros..."
+    RC=0
+    for ID in $IDS; do
+      ID=$(echo "$ID" | tr -d ' ')
+      [ -z "$ID" ] && continue
+      OUT=$(curl -s --max-time 15 -X PATCH -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" "$API/$ID" --data "{\"content\":\"$NEWIP\"}")
+      if echo "$OUT" | grep -q '"success":true'; then
+        echo "  OK $ID"
+      else
+        echo "  ERROR $ID -> $OUT"; RC=1
+      fi
+    done
+    exit $RC
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cloudflare-ddns
+  namespace: ddns
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 120
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: ddns
+              image: curlimages/curl:8.11.1
+              command: ["sh", "/script/update.sh"]
+              env:
+                - name: TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: cloudflare-ddns-token
+                      key: api-token
+              volumeMounts:
+                - { name: script, mountPath: /script }
+              resources:
+                requests: { cpu: 10m, memory: 16Mi }
+                limits:   { memory: 64Mi }
+          volumes:
+            - name: script
+              configMap: { name: ddns-script }

@@ -1,0 +1,6 @@
+.DS_Store
+*.secret.yaml
+*.env
+*.p8
+*.key
+kubeconfig*

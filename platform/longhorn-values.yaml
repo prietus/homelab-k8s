@@ -1,0 +1,23 @@
+# Longhorn — almacenamiento de bloque replicado sobre el NVMe de los workers.
+# Réplicas en los 3 workers (el master queda fuera: tiene taint control-plane).
+# NO se pone como StorageClass por defecto -> 'nfs' sigue siendo la default;
+# Longhorn es opt-in con storageClassName: longhorn.
+persistence:
+  defaultClass: false                 # no robar el "default" a nfs
+  defaultClassReplicaCount: 3         # 1 réplica por worker -> sobrevive a la caída de 1 nodo
+  reclaimPolicy: Delete
+
+defaultSettings:
+  defaultReplicaCount: 3
+  defaultDataPath: /var/lib/longhorn/ # vive en el NVMe raíz de cada worker
+  replicaSoftAntiAffinity: false      # fuerza réplicas en nodos DISTINTOS (HA real)
+  storageOverProvisioningPercentage: 100
+  storageMinimalAvailablePercentage: 15
+  # Backups: dejar configurado luego (target NFS del master o S3) si se quiere.
+
+longhornUI:
+  replicas: 1
+
+# UI sin Ingress público (la UI no trae auth). Acceso por: kubectl -n longhorn-system port-forward svc/longhorn-frontend 8080:80
+ingress:
+  enabled: false

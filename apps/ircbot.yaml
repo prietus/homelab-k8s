@@ -1,0 +1,75 @@
+# ircbot (terryflaps) — bot de IRC modular asyncio en Libera
+# Imagen propia prietus/ircbot (Python 3.12). Config por variables de entorno.
+# Conecta a irc.libera.chat:6697 TLS. Estado (SQLite/aliases) en /data (PVC longhorn).
+# El plugin weather pega al Service interno de wtr (sin salir a Internet).
+# NO necesita Ingress: es un cliente saliente, no recibe tráfico entrante.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ircbot
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ircbot-env
+  namespace: ircbot
+type: Opaque
+stringData:
+  IRC_SERVER: "irc.libera.chat"
+  IRC_PORT: "6697"
+  IRC_TLS: "true"
+  IRC_NICK: "terryflaps"
+  IRC_CHANNELS: "#testtest"
+  IRC_BOT_PASSWORD: "CHANGE_ME"      # SASL PLAIN (NickServ) en Libera
+  IRC_ADMIN_PASSWORD: "CHANGE_ME"    # comandos admin por PM
+  IRC_COMMAND_PREFIX: "."
+  BOT_DATA_DIR: "/data"
+  WTR_URL: "http://wtr.wtr.svc.cluster.local:8091"   # plugin weather -> tu wtr interno
+  OPENROUTER_API_KEY: "CHANGE_ME"  # plugins ai (.ai) e img (.img) -> OpenRouter
+  PASTEBIN_URL: "http://pastebin.pastebin.svc.cluster.local:8080"  # plugin img (.img): sube por el Service interno
+  PASTE_TOKEN: "CHANGE_ME"  # Bearer para /api/upload del pastebin
+  LOG_LEVEL: "INFO"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ircbot-data
+  namespace: ircbot
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ircbot
+  namespace: ircbot
+  labels: { app: ircbot }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }          # un solo pod sobre el mismo /data
+  selector:
+    matchLabels: { app: ircbot }
+  template:
+    metadata:
+      labels: { app: ircbot }
+    spec:
+      securityContext:
+        fsGroup: 1000                    # la imagen corre como user 'bot' (uid/gid 1000); deja /data escribible
+      containers:
+        - name: ircbot
+          image: prietus/ircbot:latest
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef: { name: ircbot-env }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits:   { memory: 256Mi }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: ircbot-data }

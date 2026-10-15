@@ -1,0 +1,93 @@
+# wtr — weather API (Apple WeatherKit) servida en https://wtr.example.com
+# Imagen: prietus/wtr (Rust/axum), escucha en :8091, `wtr serve`.
+# Stateless: la caché es en memoria (TTL 10 min), no necesita volumen.
+# Credenciales WeatherKit (config.toml + clave .p8) van en un Secret montado en /etc/wtr.
+# TLS lo termina Traefik con el cert wildcard *.example.com (tlsStore default).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wtr
+---
+# Secret con la config y la clave privada .p8 de WeatherKit.
+# key_path apunta a la ruta ABSOLUTA donde se monta el Secret (no ~), y
+# WTR_CONFIG (en la imagen) apunta a /etc/wtr/config.toml.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wtr-config
+  namespace: wtr
+type: Opaque
+stringData:
+  config.toml: |
+    team_id    = "YOUR_TEAM_ID"
+    service_id = "com.example.wtr"
+    key_id     = "YOUR_KEY_ID"
+    key_path   = "/etc/wtr/AuthKey_YOUR_KEY_ID.p8"
+  AuthKey_YOUR_KEY_ID.p8: |
+    -----BEGIN PRIVATE KEY-----
+    <paste your WeatherKit .p8 key here>
+    -----END PRIVATE KEY-----
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wtr
+  namespace: wtr
+  labels: { app: wtr }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: wtr }
+  template:
+    metadata:
+      labels: { app: wtr }
+    spec:
+      containers:
+        - name: wtr
+          image: prietus/wtr:latest
+          imagePullPolicy: Always
+          args: ["serve", "--listen", "0.0.0.0:8091"]
+          ports:
+            - { name: http, containerPort: 8091 }
+          volumeMounts:
+            - { name: config, mountPath: /etc/wtr, readOnly: true }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /health, port: 8091 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 8091 }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: config
+          secret:
+            secretName: wtr-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wtr
+  namespace: wtr
+spec:
+  selector: { app: wtr }
+  ports:
+    - { name: http, port: 8091, targetPort: 8091 }
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: wtr
+  namespace: wtr
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`wtr.example.com`)
+      kind: Rule
+      services:
+        - name: wtr
+          port: 8091
+  tls: {}                                # cert wildcard por defecto del tlsStore

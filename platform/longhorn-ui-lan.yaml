@@ -1,0 +1,19 @@
+# UI de Longhorn accesible SOLO desde la LAN, en http://192.168.1.12
+# IP de LAN dedicada vía MetalLB (L2): NO está NAT-eada en el router -> cero
+# exposición a Internet. Por eso no lleva auth (solo se llega desde la red local).
+# Requiere que 192.168.1.12/32 esté en el IPAddressPool 'lan-pool' de MetalLB.
+apiVersion: v1
+kind: Service
+metadata:
+  name: longhorn-ui-lan
+  namespace: longhorn-system
+  annotations:
+    metallb.io/loadBalancerIPs: "192.168.1.12"
+spec:
+  type: LoadBalancer
+  selector:
+    app: longhorn-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
