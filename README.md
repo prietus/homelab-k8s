@@ -51,7 +51,7 @@ kubectl apply -f apps/jellyfin.yaml
 
 ## Mac metrics
 
-The `macos/` folder turns a Mac into a Prometheus target and gives it a dashboard: CPU, memory the way Activity Monitor counts it (app + wired + compressed), disk usage, disk I/O and network. It is what [Observatory](https://observatory.priet.us) shows as desktop widgets, which is why it exists.
+The `macos/` folder turns a Mac into a Prometheus target and gives it a dashboard: CPU, memory the way Activity Monitor counts it (app + wired + compressed), disk usage and read latency, disk I/O, network, battery (charge, and time left when unplugged), uptime and swap. It is what [Observatory](https://observatory.priet.us) shows as desktop widgets, which is why it exists.
 
 1. On the Mac: `brew install node_exporter && brew services start node_exporter`. It listens on `:9100`.
 2. Scrape it. With kube-prometheus-stack, edit the IP in `macos/mac-node-exporter.yaml` and `kubectl apply` it. It declares a classic `Endpoints` on purpose, not an `EndpointSlice`: the operator discovers targets with `role: endpoints`, and the control plane only mirrors in the other direction, so a hand-written EndpointSlice is invisible to Prometheus. With a plain Prometheus it is just a static target:
