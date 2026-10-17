@@ -30,7 +30,7 @@ Mac · iPhone · Apple TV
 |---|---|
 | `platform/` | Helm values and cluster-wide pieces: Traefik, cert-manager certificate, Longhorn, kube-prometheus-stack |
 | `apps/` | Workloads: Jellyfin, tvheadend, soju + gamja (IRC bouncer + web client), IRC bot, pastebin, `wtr` (Rust API on Apple WeatherKit), Cloudflare DDNS CronJob, and a unicorn 🦄 |
-| `macos/` | My MacBook as a Prometheus target (`node_exporter` + EndpointSlice) and its Grafana dashboard |
+| `macos/` | My MacBook as a Prometheus target (`node_exporter` + a hand-written `Endpoints`) and its Grafana dashboard, both as the ConfigMap that runs here and as an importable JSON |
 
 ## Usage
 
@@ -48,6 +48,25 @@ Plain manifests:
 kubectl apply -f platform/wildcard-certificate.yaml
 kubectl apply -f apps/jellyfin.yaml
 ```
+
+## Mac metrics
+
+The `macos/` folder turns a Mac into a Prometheus target and gives it a dashboard: CPU, memory the way Activity Monitor counts it (app + wired + compressed), disk usage, disk I/O and network. It is what [Observatory](https://observatory.priet.us) shows as desktop widgets, which is why it exists.
+
+1. On the Mac: `brew install node_exporter && brew services start node_exporter`. It listens on `:9100`.
+2. Scrape it. With kube-prometheus-stack, edit the IP in `macos/mac-node-exporter.yaml` and `kubectl apply` it. It declares a classic `Endpoints` on purpose, not an `EndpointSlice`: the operator discovers targets with `role: endpoints`, and the control plane only mirrors in the other direction, so a hand-written EndpointSlice is invisible to Prometheus. With a plain Prometheus it is just a static target:
+
+   ```yaml
+   - job_name: node-exporter
+     static_configs:
+       - targets: ["192.168.1.111:9100"]
+   ```
+
+3. Import `macos/macbook-dashboard.json` (Dashboards → New → Import). It asks which Prometheus to use and then lists your Macs in a dropdown: the variables are built on `node_memory_total_bytes`, which only macOS's node_exporter exposes, so Linux hosts never show up in it.
+
+`macos/mac-dashboard.yaml` is the same dashboard as a ConfigMap for Grafana's sidecar, with the instance pinned instead of a variable. That is how it runs here, and it keeps Observatory's starred panels stable.
+
+Two macOS-specific assumptions: the network panels read `en0`, and the disk panels look at `/System/Volumes/Data`, which is where the data actually lives on APFS.
 
 ## Secrets
 
