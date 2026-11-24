@@ -1,0 +1,435 @@
+# Dashboard "MiParada" for Observatory widgets: is the bus-data pipeline alive?
+# Loaded by the grafana-sc-dashboard sidecar (ConfigMaps labelled
+# grafana_dashboard=1 in any namespace). Editing it in Grafana's UI does NOT
+# persist; edit here and kubectl apply.
+#
+# Metrics come from apps/miparada-monitor.yaml (blackbox Probe, job="miparada",
+# label fichero=datos|consorcio|metro|red) and from kube-state-metrics/cAdvisor
+# for the runner pod (namespace github-runner).
+#
+# No template variables on purpose, so Observatory favourites never depend on
+# a value that can go stale. The first row is the one to star: "Problemas"
+# (firing MiParada* alerts, 0 = all good) and "Publicado hace" (days since
+# datos.json was rewritten; the weekly job keeps it under 7).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-miparada
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  miparada.json: |
+    {
+      "uid": "miparada-observatory",
+      "title": "MiParada",
+      "tags": ["miparada", "observatory"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": { "from": "now-7d", "to": "now" },
+      "templating": { "list": [] },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Problemas",
+          "description": "Alertas MiParada* activas. 0 = todo bien.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "count(ALERTS{alertstate=\"firing\", alertname=~\"MiParada.*\"}) or vector(0)",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Problemas"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "graphMode": "none" }
+        },
+        {
+          "id": 2,
+          "title": "Publicado hace",
+          "description": "Días desde que el workflow reescribió datos.json. Se publica cada lunes.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "(time() - max(probe_http_last_modified_timestamp_seconds{job=\"miparada\", fichero=\"datos\"})) / 86400",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Publicado hace"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "d",
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 7.5 },
+                  { "color": "red", "value": 8 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "graphMode": "none" }
+        },
+        {
+          "id": 3,
+          "title": "Runner Sevilla",
+          "description": "Réplicas disponibles del runner de GitHub Actions (namespace github-runner).",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max(kube_deployment_status_replicas_available{namespace=\"github-runner\", deployment=\"github-runner\"})",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Runner Sevilla"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "graphMode": "none" }
+        },
+        {
+          "id": 4,
+          "title": "Web de datos OK",
+          "description": "https://miparada.priet.us/datos/ responde 2xx para datos.json, consorcio.json y metro.json.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "min(probe_success{job=\"miparada\", fichero=~\"datos|consorcio|metro\"})",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Web de datos OK"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "graphMode": "none" }
+        },
+        {
+          "id": 5,
+          "title": "Red TUSSAM publicada",
+          "description": "red.json existe en la web de datos. Lo genera el job mensual (días 1 y 4), unas tres horas.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 6 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max(probe_success{job=\"miparada\", fichero=\"red\"})",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Red TUSSAM publicada"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "graphMode": "none" }
+        },
+        {
+          "id": 6,
+          "title": "Red TUSSAM · días",
+          "description": "Días desde la última red.json publicada. Mensual: más de 35 es que falló el día 1 y el 4.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 6 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "(time() - max(probe_http_last_modified_timestamp_seconds{job=\"miparada\", fichero=\"red\"})) / 86400",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Red TUSSAM"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "d",
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 33 },
+                  { "color": "red", "value": 36 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "graphMode": "none" }
+        },
+        {
+          "id": 7,
+          "title": "Horarios · última novedad",
+          "description": "Días desde que cambió consorcio.json. Solo se reescribe cuando el contenido cambia, así que no es una alarma.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 12, "y": 6 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "(time() - max(probe_http_last_modified_timestamp_seconds{job=\"miparada\", fichero=\"consorcio\"})) / 86400",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Horarios"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "d",
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "blue", "value": null }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "graphMode": "none" }
+        },
+        {
+          "id": 8,
+          "title": "Reinicios runner · 24 h",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 6, "x": 18, "y": 6 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"github-runner\", container=\"runner\"}[24h]))",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Reinicios"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 1 },
+                  { "color": "red", "value": 3 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "graphMode": "none" }
+        },
+        {
+          "id": 9,
+          "title": "Memoria runner",
+          "description": "Working set del contenedor respecto a su límite (1 GiB). La descarga de TUSSAM dura tres horas: un OOM la mata.",
+          "type": "gauge",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 8, "x": 0, "y": 12 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * sum(container_memory_working_set_bytes{namespace=\"github-runner\", container=\"runner\"}) / sum(kube_pod_container_resource_limits{namespace=\"github-runner\", container=\"runner\", resource=\"memory\"})",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Memoria runner"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 70 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 10,
+          "title": "Latencia web de datos",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 8, "x": 8, "y": 12 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "1000 * max(probe_duration_seconds{job=\"miparada\", fichero=\"datos\"})",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Latencia"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "ms" },
+            "overrides": []
+          }
+        },
+        {
+          "id": 11,
+          "title": "Certificado · días",
+          "description": "Días hasta que caduque el certificado TLS de miparada.priet.us.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 6, "w": 8, "x": 16, "y": 12 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "(min(probe_ssl_earliest_cert_expiry{job=\"miparada\"}) - time()) / 86400",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Certificado"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "d",
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 7 },
+                  { "color": "green", "value": 14 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "graphMode": "none" }
+        },
+        {
+          "id": 12,
+          "title": "Runner disponible",
+          "type": "state-timeline",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 5, "w": 12, "x": 0, "y": 18 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max(kube_deployment_status_replicas_available{namespace=\"github-runner\", deployment=\"github-runner\"})",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Runner"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 13,
+          "title": "Web de datos",
+          "type": "state-timeline",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 5, "w": 12, "x": 12, "y": 18 },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "min(probe_success{job=\"miparada\", fichero=\"datos\"})",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "legendFormat": "Web"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
+    }

@@ -1,0 +1,99 @@
+# Self-hosted GitHub Actions runner for prietus/MiParada (label "sevilla").
+# It runs here because TUSSAM (Cloudflare) and Metro de Sevilla only answer
+# Spanish residential IPs; the VPS just publishes what this runner downloads.
+#
+# Registration happens once: the entrypoint uses the one-time token in the
+# "github-runner-token" Secret and keeps the runner credentials in the PVC,
+# so restarts don't need a new token. To re-register, delete .runner from the
+# PVC and create the Secret again with a fresh token:
+#   kubectl -n github-runner create secret generic github-runner-token \
+#     --from-literal=token=$(gh api -X POST repos/prietus/MiParada/actions/runners/registration-token --jq .token) \
+#     --dry-run=client -o yaml | kubectl apply -f -
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: github-runner
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: github-runner
+  namespace: github-runner
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: github-runner-entrypoint
+  namespace: github-runner
+data:
+  entrypoint.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    cd /home/runner
+    command -v python3 >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq python3 >/dev/null; }
+    for f in .runner .credentials .credentials_rsaparams; do
+      [ -f "/state/$f" ] && cp "/state/$f" .
+    done
+    if [ ! -f .runner ]; then
+      ./config.sh --unattended --url https://github.com/prietus/MiParada \
+        --token "$RUNNER_TOKEN" --name sevilla-k8s --labels sevilla \
+        --work /state/_work --replace
+      cp .runner .credentials .credentials_rsaparams /state/
+    fi
+    exec ./run.sh
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-runner
+  namespace: github-runner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: github-runner
+  template:
+    metadata:
+      labels:
+        app: github-runner
+    spec:
+      securityContext:
+        fsGroup: 1001
+      containers:
+        - name: runner
+          image: ghcr.io/actions/actions-runner:2.338.0
+          command: ["/bin/bash", "/entrypoint/entrypoint.sh"]
+          env:
+            - name: RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-runner-token
+                  key: token
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: state
+              mountPath: /state
+            - name: state
+              mountPath: /home/runner/.cache
+              subPath: cache
+            - name: entrypoint
+              mountPath: /entrypoint
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: github-runner
+        - name: entrypoint
+          configMap:
+            name: github-runner-entrypoint

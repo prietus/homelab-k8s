@@ -1,0 +1,99 @@
+# Monitoring for the MiParada data pipeline (apps/github-runner.yaml).
+#
+# What matters is not the pod but its output: every Monday the "sevilla" runner
+# downloads the Consorcio/metro timetables, and on the 1st (retry on the 4th)
+# the TUSSAM network, and the VPS publishes them at
+# https://miparada.priet.us/datos/. publicar_datos.py rewrites datos.json on
+# every successful run, so its Last-Modified is the heartbeat of the whole
+# chain (runner → GitHub → VPS → nginx). The individual files only change when
+# their content changes, so they are informative, not alarms.
+#
+# Probed from inside the cluster with platform/blackbox-exporter.yaml (HEAD
+# requests, once a minute). The `fichero` label (datos/consorcio/metro/red) is
+# derived from the URL so dashboards and alerts don't carry full URLs.
+# The runner itself is already covered by kube-state-metrics
+# (kube_deployment_status_replicas_available{namespace="github-runner"}).
+#
+# The Observatory dashboard lives in apps/miparada-dashboard.yaml.
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: miparada
+  namespace: monitoring
+  labels:
+    release: monitoring          # probeSelector of the Prometheus CR; without it the Probe is ignored
+spec:
+  jobName: miparada
+  interval: 60s
+  scrapeTimeout: 15s
+  module: http_head
+  prober:
+    url: blackbox-exporter.monitoring.svc:9115
+  targets:
+    staticConfig:
+      static:
+        - https://miparada.priet.us/datos/datos.json
+        - https://miparada.priet.us/datos/consorcio.json
+        - https://miparada.priet.us/datos/metro.json
+        - https://miparada.priet.us/datos/red.json
+      relabelingConfigs:
+        - sourceLabels: [__param_target]
+          regex: '.*/([a-z]+)\.json$'
+          targetLabel: fichero
+          replacement: '$1'
+---
+# Alerts. Remember Alertmanager only has the "null" receiver, so these fire
+# silently; the dashboard's "Problemas" panel counts firing MiParada* alerts,
+# which is what the Observatory widget shows.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: miparada
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: miparada
+      rules:
+        - alert: MiParadaDatosCaducados
+          # Weekly job (Monday 04:17 UTC) → datos.json must never be older than ~7 days.
+          expr: (time() - probe_http_last_modified_timestamp_seconds{job="miparada", fichero="datos"}) > 8 * 86400
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: Los datos de MiParada llevan más de 8 días sin publicarse
+            description: >-
+              https://miparada.priet.us/datos/datos.json no se ha reescrito en 8 días.
+              El workflow "Datos de la red" (lunes 04:17 UTC) no ha publicado nada:
+              mira gh run list --workflow datos.yml en prietus/MiParada y el pod del
+              namespace github-runner.
+        - alert: MiParadaWebCaida
+          expr: probe_success{job="miparada", fichero="datos"} == 0
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: miparada.priet.us/datos no responde
+            description: >-
+              El blackbox exporter lleva 30 minutos sin obtener un 2xx de
+              https://miparada.priet.us/datos/datos.json. La app seguirá con los datos
+              que lleva dentro, pero no recibirá actualizaciones.
+        - alert: MiParadaRunnerCaido
+          expr: max(kube_deployment_status_replicas_available{namespace="github-runner", deployment="github-runner"}) == 0
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: El runner "sevilla" de GitHub Actions lleva 30 minutos sin réplicas disponibles
+            description: >-
+              kubectl -n github-runner get pods. Si el runner no consigue registrarse,
+              hace falta un token nuevo (ver apps/github-runner.yaml).
+        - alert: MiParadaRunnerReiniciando
+          expr: increase(kube_pod_container_status_restarts_total{namespace="github-runner", container="runner"}[1h]) >= 3
+          labels:
+            severity: warning
+          annotations:
+            summary: El runner "sevilla" se ha reiniciado 3 veces o más en la última hora
+            description: kubectl -n github-runner logs deploy/github-runner --previous
