@@ -1,0 +1,49 @@
+# Identity for macos/mac-endpoint-sync.sh, the launchd job on the MacBook that
+# rewrites the mac-node-exporter Endpoints whenever the Mac's LAN IP changes
+# (DHCP kept moving it: .111 → .110 → .100 → .111 between Sep and Nov 2026,
+# and every move left Prometheus scraping the old address for days).
+#
+# It can read and patch exactly one object, the Endpoints called
+# mac-node-exporter in monitoring, and nothing else. The token lives in the
+# Secret below; the Mac keeps a copy of it, with the cluster CA, in
+# ~/.kube/mac-endpoint-sync/ (token + ca.crt; the script header says how to
+# rebuild them).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mac-endpoint-sync
+  namespace: monitoring
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mac-endpoint-sync-token
+  namespace: monitoring
+  annotations:
+    kubernetes.io/service-account.name: mac-endpoint-sync
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mac-endpoint-sync
+  namespace: monitoring
+rules:
+  - apiGroups: [""]
+    resources: [endpoints]
+    resourceNames: [mac-node-exporter]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mac-endpoint-sync
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mac-endpoint-sync
+subjects:
+  - kind: ServiceAccount
+    name: mac-endpoint-sync
+    namespace: monitoring

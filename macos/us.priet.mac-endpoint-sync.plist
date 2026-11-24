@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>us.priet.mac-endpoint-sync</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/carlos/bin/mac-endpoint-sync</string>
+	</array>
+	<!-- At login, on every network configuration change, and every 5 min. -->
+	<key>RunAtLoad</key>
+	<true/>
+	<key>WatchPaths</key>
+	<array>
+		<string>/Library/Preferences/SystemConfiguration</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>300</integer>
+	<key>ThrottleInterval</key>
+	<integer>20</integer>
+	<key>StandardOutPath</key>
+	<string>/Users/carlos/Library/Logs/mac-endpoint-sync.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/carlos/Library/Logs/mac-endpoint-sync.log</string>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>
