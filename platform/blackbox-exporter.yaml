@@ -1,0 +1,116 @@
+# blackbox_exporter: probes HTTP(S) endpoints from inside the cluster, so that
+# Prometheus can watch things that are not pods — a website on the VPS, a public
+# API, a static file that a job is supposed to refresh.
+#
+# Targets are NOT configured here. Each app declares its own `Probe` CR
+# (monitoring.coreos.com/v1) pointing at this service; the operator turns it
+# into a scrape job. The Probe needs the label release=monitoring, like the
+# PrometheusRules: the Prometheus CR filters with probeSelector on it.
+# First consumer: apps/miparada-monitor.yaml.
+#
+# Modules:
+# - http_head: HEAD request, 2xx expected, HTTPS required. Enough for
+#   probe_success, probe_http_status_code, probe_duration_seconds,
+#   probe_ssl_earliest_cert_expiry and probe_http_last_modified_timestamp_seconds
+#   (the Last-Modified header), without downloading the body every minute.
+# - http_2xx: plain GET, for pages that do not answer HEAD.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+data:
+  blackbox.yml: |
+    modules:
+      http_head:
+        prober: http
+        timeout: 10s
+        http:
+          method: HEAD
+          preferred_ip_protocol: ip4
+          follow_redirects: true
+          fail_if_not_ssl: true
+      http_2xx:
+        prober: http
+        timeout: 10s
+        http:
+          method: GET
+          preferred_ip_protocol: ip4
+          follow_redirects: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: blackbox-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: blackbox-exporter
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+      containers:
+        - name: blackbox-exporter
+          image: quay.io/prometheus/blackbox-exporter:v0.29.0
+          args:
+            - --config.file=/etc/blackbox/blackbox.yml
+            - --web.listen-address=:9115
+          ports:
+            - name: http
+              containerPort: 9115
+          volumeMounts:
+            - name: config
+              mountPath: /etc/blackbox
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: config
+          configMap:
+            name: blackbox-exporter
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+spec:
+  selector:
+    app.kubernetes.io/name: blackbox-exporter
+  ports:
+    - name: http
+      port: 9115
+      targetPort: http
