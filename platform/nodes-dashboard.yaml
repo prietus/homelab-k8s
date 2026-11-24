@@ -1,0 +1,847 @@
+# Dashboard "Nodos" for Observatory widgets: CPU, memory, network and disk I/O of
+# the four cluster nodes (master, worker01-03), from the node_exporter DaemonSet
+# that kube-prometheus-stack already runs (job="node-exporter"; the MacBook
+# target shares that job and is excluded by instance).
+#
+# Loaded by the grafana-sc-dashboard sidecar (label grafana_dashboard=1).
+# Editing it in Grafana's UI does NOT persist; edit here and kubectl apply.
+#
+# Layout, top to bottom:
+# - cluster summary (CPU/memory over all nodes, Ready nodes, running pods);
+# - one panel per metric with one line per node (legend = nodename, joined
+#   from node_uname_info so it survives an IP change). Observatory renders
+#   these as a multi-line sparkline and shows the FIRST series' value as the
+#   headline number, which is the master (lowest instance IP);
+# - one gauge per node for CPU and memory, for Small widgets.
+# rate() windows are 2m because these targets are scraped every 30s.
+# Physical NICs are lan0 (master, worker01/02) and enp1s0 (worker03): the
+# queries exclude Calico/VRRP/loopback by name instead of listing them.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-nodos
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  nodos.json: |
+    {
+      "uid": "nodos-observatory",
+      "title": "Nodos",
+      "tags": [
+        "kubernetes",
+        "observatory"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": {
+        "from": "now-3h",
+        "to": "now"
+      },
+      "templating": {
+        "list": []
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "CPU clúster",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{job=\"node-exporter\", instance!=\"macbook-pro:9100\", mode=\"idle\"}[2m])))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "CPU clúster"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "description": "Uso medio de las 28 CPUs del clúster (4 del master + 8 por worker)."
+        },
+        {
+          "id": 2,
+          "title": "Memoria clúster",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - sum(node_memory_MemAvailable_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"}) / sum(node_memory_MemTotal_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"}))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Memoria clúster"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 80
+                  },
+                  {
+                    "color": "red",
+                    "value": 92
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 3,
+          "title": "Nodos listos",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 12,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(kube_node_status_condition{condition=\"Ready\", status=\"true\"})",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Nodos listos"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 3
+                  },
+                  {
+                    "color": "green",
+                    "value": 4
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "description": "Nodos con la condición Ready. Son 4.",
+          "options": {
+            "graphMode": "none"
+          }
+        },
+        {
+          "id": 4,
+          "title": "Pods en ejecución",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 18,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(kube_pod_status_phase{phase=\"Running\"})",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Pods en ejecución"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "graphMode": "area"
+          }
+        },
+        {
+          "id": 5,
+          "title": "CPU por nodo",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 6
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job=\"node-exporter\", instance!=\"macbook-pro:9100\", mode=\"idle\"}[2m]))) * on (instance) group_left (nodename) node_uname_info{job=\"node-exporter\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 6,
+          "title": "Memoria por nodo",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 6
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"} / node_memory_MemTotal_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"}) * on (instance) group_left (nodename) node_uname_info{job=\"node-exporter\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 7,
+          "title": "Red · bajada por nodo",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 13
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (instance) (rate(node_network_receive_bytes_total{job=\"node-exporter\", instance!=\"macbook-pro:9100\", device!~\"lo|cali.*|vxlan.*|vrrp.*|tunl.*|veth.*|docker.*|br.*|kube.*|dummy.*|nodelocaldns\"}[2m])) * 8 * on (instance) group_left (nodename) node_uname_info{job=\"node-exporter\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bps"
+            },
+            "overrides": []
+          },
+          "description": "Solo interfaces físicas: fuera lo, cali*, vxlan.calico, vrrp*, tunl*."
+        },
+        {
+          "id": 8,
+          "title": "Red · subida por nodo",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 13
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (instance) (rate(node_network_transmit_bytes_total{job=\"node-exporter\", instance!=\"macbook-pro:9100\", device!~\"lo|cali.*|vxlan.*|vrrp.*|tunl.*|veth.*|docker.*|br.*|kube.*|dummy.*|nodelocaldns\"}[2m])) * 8 * on (instance) group_left (nodename) node_uname_info{job=\"node-exporter\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bps"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 9,
+          "title": "Disco · lectura por nodo",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 20
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (instance) (rate(node_disk_read_bytes_total{job=\"node-exporter\", instance!=\"macbook-pro:9100\", device=~\"nvme[0-9]+n[0-9]+|sd[a-z]+|vd[a-z]+\"}[2m])) * on (instance) group_left (nodename) node_uname_info{job=\"node-exporter\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "description": "Suma de los discos físicos (nvme*, sd*) de cada nodo."
+        },
+        {
+          "id": 10,
+          "title": "Disco · escritura por nodo",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 20
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (instance) (rate(node_disk_written_bytes_total{job=\"node-exporter\", instance!=\"macbook-pro:9100\", device=~\"nvme[0-9]+n[0-9]+|sd[a-z]+|vd[a-z]+\"}[2m])) * on (instance) group_left (nodename) node_uname_info{job=\"node-exporter\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 11,
+          "title": "CPU master",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 0,
+            "y": 27
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job=\"node-exporter\", instance!=\"macbook-pro:9100\", mode=\"idle\"}[2m]))) and on (instance) node_uname_info{job=\"node-exporter\", nodename=\"master\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "CPU master"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 12,
+          "title": "CPU worker01",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 6,
+            "y": 27
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job=\"node-exporter\", instance!=\"macbook-pro:9100\", mode=\"idle\"}[2m]))) and on (instance) node_uname_info{job=\"node-exporter\", nodename=\"worker01\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "CPU worker01"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 13,
+          "title": "CPU worker02",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 12,
+            "y": 27
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job=\"node-exporter\", instance!=\"macbook-pro:9100\", mode=\"idle\"}[2m]))) and on (instance) node_uname_info{job=\"node-exporter\", nodename=\"worker02\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "CPU worker02"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 14,
+          "title": "CPU worker03",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 18,
+            "y": 27
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job=\"node-exporter\", instance!=\"macbook-pro:9100\", mode=\"idle\"}[2m]))) and on (instance) node_uname_info{job=\"node-exporter\", nodename=\"worker03\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "CPU worker03"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 15,
+          "title": "Memoria master",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 0,
+            "y": 32
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"} / node_memory_MemTotal_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"}) and on (instance) node_uname_info{job=\"node-exporter\", nodename=\"master\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Memoria master"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 80
+                  },
+                  {
+                    "color": "red",
+                    "value": 92
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 16,
+          "title": "Memoria worker01",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 6,
+            "y": 32
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"} / node_memory_MemTotal_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"}) and on (instance) node_uname_info{job=\"node-exporter\", nodename=\"worker01\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Memoria worker01"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 80
+                  },
+                  {
+                    "color": "red",
+                    "value": 92
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 17,
+          "title": "Memoria worker02",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 12,
+            "y": 32
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"} / node_memory_MemTotal_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"}) and on (instance) node_uname_info{job=\"node-exporter\", nodename=\"worker02\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Memoria worker02"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 80
+                  },
+                  {
+                    "color": "red",
+                    "value": 92
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 18,
+          "title": "Memoria worker03",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 18,
+            "y": 32
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"} / node_memory_MemTotal_bytes{job=\"node-exporter\", instance!=\"macbook-pro:9100\"}) and on (instance) node_uname_info{job=\"node-exporter\", nodename=\"worker03\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "legendFormat": "Memoria worker03"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 80
+                  },
+                  {
+                    "color": "red",
+                    "value": 92
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
+    }
