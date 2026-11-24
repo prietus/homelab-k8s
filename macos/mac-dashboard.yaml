@@ -8,6 +8,10 @@
 # Observatory no dependen de valores que puedan quedarse caducados.
 # Unidades en formato Grafana (percent/Bps/bps/bytes/short) porque el widget ya
 # las escala: 1128140 Bps -> "1,1 MB/s".
+# Las ventanas de rate son de 1m (con scrape de 15 s, 4 muestras): con 5m los
+# widgets de Observatory parecian congelados, porque pintaban una media movil
+# de cinco minutos. Ojo: los favoritos de Observatory guardan una copia de la
+# consulta al marcarlos, asi que tras cambiar un expr hay que re-marcar el panel.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -26,7 +30,7 @@ data:
       ],
       "timezone": "browser",
       "schemaVersion": 39,
-      "version": 3,
+      "version": 4,
       "refresh": "1m",
       "time": {
         "from": "now-3h",
@@ -53,7 +57,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", mode=\"idle\"}[5m])))",
+              "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", mode=\"idle\"}[1m])))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "prometheus"
@@ -258,7 +262,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(rate(node_disk_read_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=~\"disk.+\"}[5m]))",
+              "expr": "sum(rate(node_disk_read_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=~\"disk.+\"}[1m]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "prometheus"
@@ -290,7 +294,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(rate(node_disk_written_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=~\"disk.+\"}[5m]))",
+              "expr": "sum(rate(node_disk_written_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=~\"disk.+\"}[1m]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "prometheus"
@@ -322,7 +326,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(rate(node_network_receive_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=\"en0\"}[5m])) * 8",
+              "expr": "sum(rate(node_network_receive_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=\"en0\"}[1m])) * 8",
               "datasource": {
                 "type": "prometheus",
                 "uid": "prometheus"
@@ -354,7 +358,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(rate(node_network_transmit_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=\"en0\"}[5m])) * 8",
+              "expr": "sum(rate(node_network_transmit_bytes_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=\"en0\"}[1m])) * 8",
               "datasource": {
                 "type": "prometheus",
                 "uid": "prometheus"
@@ -679,7 +683,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "1000 * sum(rate(node_disk_read_time_seconds_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=~\"disk.+\"}[5m])) / clamp_min(sum(rate(node_disk_reads_completed_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=~\"disk.+\"}[5m])), 1)",
+              "expr": "1000 * sum(rate(node_disk_read_time_seconds_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=~\"disk.+\"}[1m])) / clamp_min(sum(rate(node_disk_reads_completed_total{instance=\"macbook-pro:9100\", job=\"node-exporter\", device=~\"disk.+\"}[1m])), 1)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "prometheus"

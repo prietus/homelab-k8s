@@ -35,7 +35,7 @@ metadata:
   namespace: monitoring
 subsets:
   - addresses:
-      - ip: 192.168.1.110                       # <- IP del MacBook en la LAN (DHCP: reservar en el router)
+      - ip: 192.168.1.111                       # <- la mantiene al día mac-endpoint-sync (ver mac-endpoint-sync.sh)
     ports:
       - name: metrics
         port: 9100
@@ -55,7 +55,7 @@ spec:
       app.kubernetes.io/name: mac-node-exporter
   endpoints:
     - port: metrics
-      interval: 30s
+      interval: 15s                 # 15 s para que rate(...[1m]) tenga 4 muestras (dashboard MacBook)
       scrapeTimeout: 10s
       relabelings:
         - action: replace

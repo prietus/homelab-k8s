@@ -20,7 +20,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "1m",
   "time": {
     "from": "now-3h",
@@ -88,7 +88,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{job=\"$job\", instance=\"$instance\", mode=\"idle\"}[5m])))",
+          "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{job=\"$job\", instance=\"$instance\", mode=\"idle\"}[1m])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -293,7 +293,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(node_disk_read_bytes_total{job=\"$job\", instance=\"$instance\", device=~\"disk.+\"}[5m]))",
+          "expr": "sum(rate(node_disk_read_bytes_total{job=\"$job\", instance=\"$instance\", device=~\"disk.+\"}[1m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -325,7 +325,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(node_disk_written_bytes_total{job=\"$job\", instance=\"$instance\", device=~\"disk.+\"}[5m]))",
+          "expr": "sum(rate(node_disk_written_bytes_total{job=\"$job\", instance=\"$instance\", device=~\"disk.+\"}[1m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -357,7 +357,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(node_network_receive_bytes_total{job=\"$job\", instance=\"$instance\", device=\"en0\"}[5m])) * 8",
+          "expr": "sum(rate(node_network_receive_bytes_total{job=\"$job\", instance=\"$instance\", device=\"en0\"}[1m])) * 8",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -389,7 +389,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(node_network_transmit_bytes_total{job=\"$job\", instance=\"$instance\", device=\"en0\"}[5m])) * 8",
+          "expr": "sum(rate(node_network_transmit_bytes_total{job=\"$job\", instance=\"$instance\", device=\"en0\"}[1m])) * 8",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -714,7 +714,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "1000 * sum(rate(node_disk_read_time_seconds_total{job=\"$job\", instance=\"$instance\", device=~\"disk.+\"}[5m])) / clamp_min(sum(rate(node_disk_reads_completed_total{job=\"$job\", instance=\"$instance\", device=~\"disk.+\"}[5m])), 1)",
+          "expr": "1000 * sum(rate(node_disk_read_time_seconds_total{job=\"$job\", instance=\"$instance\", device=~\"disk.+\"}[1m])) / clamp_min(sum(rate(node_disk_reads_completed_total{job=\"$job\", instance=\"$instance\", device=~\"disk.+\"}[1m])), 1)",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
